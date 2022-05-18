@@ -16,7 +16,10 @@ from emoji import UNICODE_EMOJI
 bot = commands.Bot('$')
 
 role_comments = {}  # guild.id: message
-role_emojis = {}  # guild.id : [ {emoji: ":salt:", game: league, role: <@68463464>} ]
+# guild.id : [ {emoji: "🧂", game: "league", role: <@68463464>} ]
+# emojis can also be the id of the emoji in case its a custom emoji.
+# Use get_emoji method before use to make sure everything works
+role_emojis = {}
 
 
 @bot.event
@@ -30,7 +33,8 @@ async def hello(ctx):
     await ctx.channel.send('Hello!')
 
 
-'''@bot.command(name="logout", pass_context=True)
+'''
+@bot.command(name="logout", pass_context=True)
 @has_permissions(administrator=True)
 async def logout(ctx):
     """Shuts the bot down"""
@@ -44,7 +48,10 @@ async def logout_error(ctx, error):
         await ctx.channel.send("You aren't an admin. Cringe :sick:")
     else:
         traceback.print_exc()
+'''
 
+# TODO make command purge everything after the role_comment if its in the same channel
+'''
 @bot.command(name="purge", pass_context=True)
 @has_permissions(administrator=True)
 async def purge(ctx):
@@ -56,7 +63,8 @@ async def purge_error(ctx, error):
     if isinstance(error, MissingPermissions):
         await ctx.channel.send("You aren't an admin. Cringe :sick:")
     else:
-        traceback.print_exc()'''
+        traceback.print_exc()
+'''
 
 
 @bot.command(name="listen", pass_context=True)
@@ -68,6 +76,7 @@ async def start_listening_for_roles(ctx):
             "Ok! Add roles for me to listen to by using $add_role")
         role_emojis[ctx.guild.id] = []
         save_comments()
+        # TODO Make the bot delete the $listen command
     else:
         await ctx.channel.send("I'm already listening to a comment on this Server.")
 
@@ -153,14 +162,7 @@ async def add_role(ctx: commands.context.Context):
             except discord.NotFound:
                 await ctx.channel.send("The Comment I was listening too was deleted. I'm going to stop listening here.")
                 await stop_listening_for_roles(ctx)
-            except TypeError:
-                print(game)
-                print(role)
-                print(emoji)
-                traceback.print_exc()
-                role_emoji_list.remove(new_emoji)
-                save_comments()
-            except InvalidArgument:
+            except (TypeError, InvalidArgument):
                 print(game)
                 print(role)
                 print(emoji)
@@ -170,7 +172,7 @@ async def add_role(ctx: commands.context.Context):
             return
 
     await ctx.channel.send("You are using this command wrong. $add_role roleName rolePing emoji\n\
-    gameName = Name of the Game\n\
+    roleName = Name of the Role/Game\n\
     rolePing = ping the role for that game\n\
     emoji=emoji that's used to subscribe")
     return
@@ -241,7 +243,7 @@ async def remove_role(ctx: commands.context.Context):
                 return
     await ctx.channel.send("You are using this command wrong. $remove_role <argument>\n\
     argument is any of the following:\n\
-    gameName = Name of the Game\n\
+    roleName = Name of the Role/Game\n\
     rolePing = ping the role for that game\n\
     emoji=emoji that's used to subscribe")
     return
@@ -257,6 +259,17 @@ async def add_role_error(ctx, error):
         await ctx.channel.send("Something went wrong. I was not allowed to do that. Please check my permissions")
     else:
         traceback.print_exc()
+
+
+@bot.command(name="list_roles")
+@has_permissions(administrator=True)
+async def list_roles(ctx: commands.context.Context):
+    guild_id = ctx.guild.id
+    if guild_id in role_comments.keys():
+        await ctx.channel.send(role_comments[guild_id])
+        await ctx.channel.send(role_emojis[guild_id])
+    else:
+        await ctx.channel.send("I'm not listening to reactions yet. Try typing '$listen' first")
 
 
 @bot.event
@@ -352,19 +365,27 @@ async def load_comments():
         role_comments, role_emojis = pickle.load(open("role_comments", "rb"))
         # print(f"loading {role_comments}")
         # print(f"loading {role_emojis}")
+        mark_for_deletion = set()
         for guild_id, message_tuple in role_comments.items():
-            channel = await bot.fetch_channel(message_tuple[0])
-            message = await channel.fetch_message(message_tuple[1])
-            role_comments[guild_id] = message
-
+            try:
+                channel = await bot.fetch_channel(message_tuple[0])
+                message = await channel.fetch_message(message_tuple[1])
+                role_comments[guild_id] = message
+            except discord.NotFound:
+                mark_for_deletion.add(guild_id)
         for guild_id, emoji_list in role_emojis.items():
-            guild = await bot.fetch_guild(guild_id)
-            for emoji_dict in emoji_list:
-                emoji_dict["role"] = guild.get_role(emoji_dict["role"])
+            try:
+                guild = await bot.fetch_guild(guild_id)
+                for emoji_dict in emoji_list:
+                    emoji_dict["role"] = guild.get_role(emoji_dict["role"])
+            except discord.NotFound:
+                mark_for_deletion.add(guild_id)
 
-        # print(f"loaded {role_comments}")
-        # print(f"loaded {role_emojis}")
-
+        for deletion in mark_for_deletion:
+            role_comments.pop(deletion, None)
+            role_emojis.pop(deletion, None)
+        if mark_for_deletion:
+            save_comments()
     except FileNotFoundError:
         save_comments()
 
