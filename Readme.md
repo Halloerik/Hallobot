@@ -30,6 +30,11 @@ $hello
 Make the bot respond with "Hello!"
 ___
 ```bash
+$version
+```
+Make the bot respond with its current version.
+___
+```bash
 $listen
 ```
 Tells the bot which channel to use for its role assignment message
@@ -54,4 +59,9 @@ $remove_role rolePing
 $remove_role emoji
 ```
 Removes the role with any of the matching parameters from the role assignment message
+___
+```bash
+$list_roles
+```
+Prints out the message the bot listens to and the roles it listens for
 ___

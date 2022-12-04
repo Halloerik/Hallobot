@@ -21,6 +21,7 @@ role_comments = {}  # guild.id: message
 # Use get_emoji method before use to make sure everything works
 role_emojis = {}
 
+version = "1.0.1"
 
 @bot.event
 async def on_ready():
@@ -32,6 +33,9 @@ async def on_ready():
 async def hello(ctx):
     await ctx.channel.send('Hello!')
 
+@bot.command(name="version", pass_context=True)
+async def hello(ctx):
+    await ctx.channel.send(f'I am running on version: {version}')
 
 '''
 @bot.command(name="logout", pass_context=True)
