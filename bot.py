@@ -21,7 +21,7 @@ role_comments = {}  # guild.id: message
 # Use get_emoji method before use to make sure everything works
 role_emojis = {}
 
-version = "1.0.1"
+version = "1.0.2"
 
 @bot.event
 async def on_ready():
@@ -275,6 +275,10 @@ async def list_roles(ctx: commands.context.Context):
     else:
         await ctx.channel.send("I'm not listening to reactions yet. Try typing '$listen' first")
 
+@list_roles.error
+async def add_role_error(ctx, error):
+    if isinstance(error, MissingPermissions):
+        await ctx.channel.send("You aren't an admin. Cringe :sick:")
 
 @bot.event
 async def on_raw_reaction_add(reaction_event: discord.RawReactionActionEvent):
