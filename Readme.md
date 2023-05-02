@@ -61,6 +61,19 @@ $remove_role emoji
 Removes the role with any of the matching parameters from the role assignment message
 ___
 ```bash
+$listen_eula messageID rolePing emoji
+```
+Sets a message with the given messageID as EULA-Message by adding a reaction with the specified emoji. 
+Clicking on that emoji will give the user the role specified by the rolePing
+
+Useful for making people read the server rules before accessing other parts of the server
+___
+```bash
+$stop_listen_eula
+```
+Removes the EULA function from the message set by $listen_eula
+___
+```bash
 $list_roles
 ```
 Prints out the message the bot listens to and the roles it listens for
