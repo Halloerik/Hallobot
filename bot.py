@@ -6,31 +6,62 @@ Created on 01.05.2020
 import pickle
 import sys
 import traceback
+from typing import TypedDict
 
 import discord
 import discord.ext.commands as commands
-from discord.errors import Forbidden, LoginFailure, InvalidArgument, NotFound, HTTPException
+from discord.errors import Forbidden, LoginFailure, NotFound, HTTPException
 from discord.ext.commands import has_permissions, MissingPermissions, RoleNotFound
-from emoji import UNICODE_EMOJI
+from emoji import is_emoji
 
-bot = commands.Bot('$')
+intents = discord.Intents.default()
+intents.message_content = True
 
-role_comments = {}  # guild.id: message
+bot = commands.Bot('$', intents=intents)
+
+
+class RoleEmoji(TypedDict):
+    # emojis can also be the id of the emoji in case it's a custom emoji.
+    # Use get_emoji method before use to make sure everything works
+    emoji: str | int
+    game: str
+    role: discord.Role
+
+
+class EulaEmoji(TypedDict):
+    # emojis can also be the id of the emoji in case it's a custom emoji.
+    # Use get_emoji method before use to make sure everything works
+    emoji: str | int
+    message: discord.Message
+    role: discord.Role
+
+
+role_comments: dict[int, discord.Message] = {}  # guild.id: message
 
 # guild.id : [ {emoji: "🧂", game: "league", role: <@68463464>} ]
-# emojis can also be the id of the emoji in case its a custom emoji.
-# Use get_emoji method before use to make sure everything works
-role_emojis = {}
+role_emojis: dict[int, list[RoleEmoji]] = {}
 
 # guild.id: {message:message.id, emoji:"✅", role: <@68463464>}
-eula_comments = {}
+eula_comments: dict[int, EulaEmoji] = {}
 
-version = "1.1.0"
+version = "1.2.0"
 
 
 @bot.event
 async def on_ready():
     await load_comments()
+    # print("role_comments", type(role_comments), [(type(k), type(v)) for (k, v) in role_comments.items()])
+    # print(role_comments, "\n")
+
+    # print("role_emojis", type(role_emojis),
+    #      [(type(k), [(type(v["emoji"]), type(v["game"]), type(v["role"])) for v in vs]) for (k, vs) in
+    #       role_emojis.items()])
+    # print(role_emojis, "\n")
+
+    # print("eula_comments", type(eula_comments),
+    #      [(type(k), (type(v["emoji"]), type(v["message"]), type(v["role"]))) for (k, v) in eula_comments.items()])
+    # print(eula_comments, "\n")
+
     print(f'We have logged in as {bot.user} on {len(bot.guilds)} servers!')
 
 
@@ -88,11 +119,26 @@ async def purge_error(ctx, error):
 async def start_listening_for_roles(ctx):
     global role_comments
     if ctx.guild.id not in role_comments.keys():
-        role_comments[ctx.guild.id] = await ctx.channel.send(
-            "Ok! Add roles for me to listen to by using $add_role")
-        role_emojis[ctx.guild.id] = []
-        save_comments()
-        # TODO Make the bot delete the $listen command
+        command_parts = ctx.message.content.split(" ")
+        if len(command_parts) == 1:
+            role_comments[ctx.guild.id] = await ctx.channel.send(
+                "Ok! Add roles for me to listen to by using $add_role")
+            role_emojis[ctx.guild.id] = []
+            save_comments()
+        else:
+            try:
+                message = await ctx.channel.fetch_message(command_parts[1])
+            except NotFound:
+                await ctx.channel.send("Could not find this message")
+                return
+            except HTTPException as error:
+                if error.status == 400:
+                    await ctx.channel.send(f"'{command_parts[1]}' is not a valid message id")
+                raise error
+            role_comments[ctx.guild.id] = message
+            role_emojis[ctx.guild.id] = []
+            await ctx.channel.send(
+                "Ok! Will listen to that message. Add roles for me to listen to by using $add_role")
     else:
         await ctx.channel.send("I'm already listening to a comment on this Server.")
 
@@ -178,13 +224,16 @@ async def add_role(ctx: commands.context.Context):
             except discord.NotFound:
                 await ctx.channel.send("The Comment I was listening too was deleted. I'm going to stop listening here.")
                 await stop_listening_for_roles(ctx)
-            except (TypeError, InvalidArgument):
+            except TypeError:
                 print(game)
                 print(role)
                 print(emoji)
                 traceback.print_exc()
                 role_emoji_list.remove(new_emoji)
                 save_comments()
+            except Exception as e:
+                print("Error in add role:", type(e))
+                traceback.print_exc()
             return
 
     await ctx.channel.send("You are using this command wrong. $add_role roleName rolePing emoji\n\
@@ -313,6 +362,7 @@ async def start_listening_for_eula(ctx):
                 raise error
 
             role = await commands.RoleConverter().convert(ctx, command_parts[2])
+
             try:
                 emoji = await commands.PartialEmojiConverter().convert(ctx, command_parts[3])
                 emoji = emoji.id
@@ -330,13 +380,16 @@ async def start_listening_for_eula(ctx):
             except discord.NotFound:
                 await ctx.channel.send("The Comment I was listening too was deleted. I'm going to stop listening here.")
                 await stop_listening_for_roles(ctx)
-            except (TypeError, InvalidArgument):
+            except TypeError:
                 print(message)
                 print(role)
                 print(emoji)
                 traceback.print_exc()
                 eula_comments.pop(ctx.guild.id)
                 save_comments()
+            except Exception as e:
+                print("Error in start listening for eula:", type(e))
+                traceback.print_exc()
             return
 
         await ctx.channel.send("You are using this command wrong. $listen_eula messageID rolePing emoji\n\
@@ -364,13 +417,14 @@ async def stop_listening_for_eula(ctx):
     global eula_comments
     if ctx.guild.id in eula_comments.keys():
         eula_comment = eula_comments.pop(ctx.guild.id)
+        await ctx.channel.send("Ok! I won't listen here anymore")
         message = eula_comment["message"]
         emoji = eula_comment["emoji"]
         try:
-            await message.clear_reaction(emoji)
+            await message.clear_reaction(await get_emoji(ctx.guild, emoji))
         except NotFound:
             pass
-        await ctx.channel.send("Ok! I won't listen here anymore")
+
         save_comments()
     else:
         await ctx.channel.send("I wasn't listening here anyway.")
@@ -543,13 +597,13 @@ async def load_comments():
 
         if mark_for_deletion or mark_for_deletion_eula:
             save_comments()
+
     except FileNotFoundError:
         save_comments()
 
 
-async def get_emoji(guild, emoji):
-    # print(UNICODE_EMOJI['en'].keys())
-    if emoji in UNICODE_EMOJI['en'].keys():
+async def get_emoji(guild: discord.Guild, emoji: str | int) -> str | discord.Emoji:
+    if is_emoji(emoji):
         return emoji
     else:
         emoji = await guild.fetch_emoji(emoji)
@@ -557,7 +611,12 @@ async def get_emoji(guild, emoji):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) != 2:
+    if len(sys.argv) == 1:
+        try:
+            bot.run(sys.stdin.read())
+        except LoginFailure as e:
+            print("Invalid Token")
+    elif len(sys.argv) != 2:
         print("The bot needs a discord token as argument.")
     else:
         try:
